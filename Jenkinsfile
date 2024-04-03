@@ -1,34 +1,45 @@
-node {
-    def app
-
-    stage('Clone repository') {
-      
-
-        checkout scm
-    }
-
-    stage('Build image') {
-  
-       app = docker.build("vaibhav1405/cicd")
-    }
-
-    stage('Test image') {
-  
-
-        app.inside {
-            sh 'echo "Tests passed"'
-        }
-    }
-
-    stage('Push image') {
-        
-        docker.withRegistry('https://registry.hub.docker.com', 'dockerhub') {
-            app.push("${env.BUILD_NUMBER}")
-        }
-    }
+pipeline {
+    agent any
     
-    stage('Trigger ManifestUpdate') {
-                echo "triggering updatemanifestjob"
-                build job: 'updates', parameters: [string(name: 'DOCKERTAG', value: env.BUILD_NUMBER)]
+    stages {
+        stage('Git Clone') {
+            steps {
+                git branch: 'main', url: 'https://github.com/VaibhavVinayakChaudhari/kubernetescode'        
+            }
         }
+        
+        stage('Docker build') {
+            steps {
+                sh 'docker build -t vaibhav1405/cicd:$BUILD_NUMBER .' 
+            }
+        }
+        
+        stage('Docker push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'dockerhub') {
+                        sh 'docker push vaibhav1405/cicd:$BUILD_NUMBER'
+                    }
+                }
+            }
+        }
+        
+        stage('Modify Deployment') {
+            steps {
+                script {
+                    sh "sed -i 's|image: docker.io/httpd|image: vaibhav1405/cicd:$BUILD_NUMBER|' deployment.yaml"
+                }
+            }
+        }
+      
+        stage('Deployment') {
+            steps {
+                script {
+                    
+                    sh 'kubectl apply --kubeconfig=/tmp/myconfig -f deployment.yaml'
+                    sh 'kubectl apply --kubeconfig=/tmp/myconfig -f svc.yaml'
+                    }
+            }
+        }
+    }
 }
